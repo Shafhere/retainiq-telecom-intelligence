@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         extra = "ignore"
+        protected_namespaces = ()
 
 
 settings = Settings()

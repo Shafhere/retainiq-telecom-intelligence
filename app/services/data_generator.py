@@ -43,7 +43,7 @@ def generate_customers(n: int = 5000, seed: int = 42) -> pd.DataFrame:
         + rng.normal(0, 0.6, n)
     )
     churn_prob = 1 / (1 + np.exp(-logit))
-    churn = (rng.random(n) < churn_prob * 0.55).astype(int)
+    churn = (rng.random(n) < churn_prob * 0.32).astype(int)
 
     return pd.DataFrame({
         "customer_id": [f"C{100000+i}" for i in range(n)],
