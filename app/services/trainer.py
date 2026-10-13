@@ -17,12 +17,14 @@ from lightgbm import LGBMClassifier
 
 from app.config import settings
 
-
-NUMERIC = ["tenure_months", "monthly_charges", "total_charges", "num_support_calls"]
+NUMERIC = [
+    "tenure_months", "monthly_charges", "total_charges",
+    "num_support_calls", "days_since_last_login",
+    "avg_monthly_gb", "late_payments",
+]
 CATEGORICAL = ["contract_type", "internet_service", "payment_method"]
 BOOLEAN = ["has_online_security", "has_tech_support"]
 DROP = ["customer_id", "city", "churn"]
-
 
 def build_preprocessor():
     return ColumnTransformer(
@@ -59,15 +61,22 @@ def train_models(df: pd.DataFrame, test_size: float = 0.2, seed: int = 42) -> di
 
     preprocessor = build_preprocessor()
 
+    # Compute class imbalance ratio (negatives / positives)
+    neg, pos = (y_train == 0).sum(), (y_train == 1).sum()
+    scale = float(neg) / float(pos)
+    print(f"Class balance — neg: {neg}, pos: {pos}, scale_pos_weight: {scale:.2f}")
+
     candidates = {
         "xgboost": XGBClassifier(
-            n_estimators=400, max_depth=6, learning_rate=0.05,
+            n_estimators=500, max_depth=5, learning_rate=0.05,
             subsample=0.9, colsample_bytree=0.9,
+            scale_pos_weight=scale,
             eval_metric="logloss", random_state=seed, n_jobs=-1,
         ),
         "lightgbm": LGBMClassifier(
-            n_estimators=400, max_depth=6, learning_rate=0.05,
+            n_estimators=500, max_depth=5, learning_rate=0.05,
             subsample=0.9, colsample_bytree=0.9,
+            class_weight="balanced",
             random_state=seed, n_jobs=-1, verbose=-1,
         ),
     }

@@ -24,26 +24,40 @@ def generate_customers(n: int = 5000, seed: int = 42) -> pd.DataFrame:
     monthly = np.clip(base_charge + rng.normal(0, 25, n), 60, 500)
     total = np.clip(monthly * tenure + rng.normal(0, 200, n), 50, None)
 
-    support_calls = rng.poisson(
-        lam=np.where(contract == "month-to-month", 2.5, 1.0), size=n
-    )
+    # Independent features (not tied to contract — otherwise they're proxies)
+    support_calls = rng.poisson(lam=1.5, size=n)
     online_security = rng.choice([True, False], n, p=[0.35, 0.65])
     tech_support = rng.choice([True, False], n, p=[0.30, 0.70])
+    days_since_last_login = rng.integers(0, 90, n)
+    avg_monthly_gb = np.clip(
+        np.where(internet == "fiber", rng.normal(180, 40, n),
+        np.where(internet == "dsl", rng.normal(80, 30, n), rng.normal(5, 3, n))),
+        0, 400,
+    ).round(1)
+    late_payments = rng.poisson(lam=0.8, size=n)
 
-    logit = (
-        -0.9 * (tenure < 12)
-        + 1.4 * (contract == "month-to-month")
-        - 0.8 * (contract == "two_year")
-        + 0.9 * (internet == "fiber")
-        + 0.05 * support_calls
-        + 0.6 * (monthly > 250)
-        + 0.5 * (payment == "cash")
-        - 0.7 * online_security
-        - 0.6 * tech_support
-        + rng.normal(0, 0.6, n)
+    # ---------------------------------------------------------------
+    # MULTIPLICATIVE churn probability — each factor scales the base.
+    # Much cleaner signal than sigmoid(logit) with a final multiplier.
+    # ---------------------------------------------------------------
+    base_prob = np.where(
+        contract == "month-to-month", 0.28,
+        np.where(contract == "one_year", 0.07, 0.02),
     )
-    churn_prob = 1 / (1 + np.exp(-logit))
-    churn = (rng.random(n) < churn_prob * 0.32).astype(int)
+
+    prob = base_prob.copy()
+    prob *= np.where(tenure < 12, 2.0, 1.0)               # new customers churn more
+    prob *= np.where(tenure > 48, 0.5, 1.0)               # loyal customers churn less
+    prob *= np.where(internet == "fiber", 1.3, 1.0)       # premium → more likely to leave
+    prob *= np.where(payment == "cash", 1.5, 1.0)         # cash payers less committed
+    prob *= np.where(online_security, 0.6, 1.0)
+    prob *= np.where(tech_support, 0.65, 1.0)
+    prob *= np.where(support_calls >= 3, 1.5, 1.0)        # many complaints → risk
+    prob *= np.where(days_since_last_login > 60, 1.6, 1.0)  # disengaged
+    prob *= np.where(late_payments >= 2, 1.7, 1.0)        # payment issues
+
+    prob = np.clip(prob, 0.005, 0.95)
+    churn = (rng.random(n) < prob).astype(int)
 
     return pd.DataFrame({
         "customer_id": [f"C{100000+i}" for i in range(n)],
@@ -57,6 +71,9 @@ def generate_customers(n: int = 5000, seed: int = 42) -> pd.DataFrame:
         "num_support_calls": support_calls,
         "has_online_security": online_security,
         "has_tech_support": tech_support,
+        "days_since_last_login": days_since_last_login,
+        "avg_monthly_gb": avg_monthly_gb,
+        "late_payments": late_payments,
         "churn": churn,
     })
 
