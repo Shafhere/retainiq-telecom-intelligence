@@ -1,0 +1,26 @@
+services:
+  api:
+    build: .
+    container_name: retainiq-api
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - DATABASE_URL=sqlite:///./retainiq.db
+      - MODEL_DIR=/app/ml/models
+      - DATA_DIR=/app/data
+    volumes:
+      - ./ml/models:/app/ml/models
+      - ./data:/app/data
+      - ./retainiq.db:/app/retainiq.db
+
+  dashboard:
+    build: .
+    container_name: retainiq-dashboard
+    command: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
