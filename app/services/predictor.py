@@ -23,6 +23,10 @@ class Predictor:
             self.meta = json.load(f)
         self.pipeline = joblib.load(self.meta["model_path"])
 
+    def reload(self):
+        """Reload from disk — call after retraining to pick up new model."""
+        self._load()
+
     @property
     def version(self) -> str:
         return self.meta.get("version", "unknown")

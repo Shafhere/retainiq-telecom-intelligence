@@ -51,6 +51,7 @@ def evaluate_model(model, X_test, y_test) -> dict:
 
 
 def train_models(df: pd.DataFrame, test_size: float = 0.2, seed: int = 42) -> dict:
+    """Train and return metadata (unchanged logic, kept compatible)."""
     feature_cols = [c for c in df.columns if c not in DROP]
     X = df[feature_cols]
     y = df["churn"]
