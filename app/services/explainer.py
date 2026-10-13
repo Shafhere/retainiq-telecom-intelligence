@@ -1,7 +1,6 @@
-import numpy as np
-import shap
 import pandas as pd
-
+import numpy as np
+import xgboost as xgb
 
 FEATURE_LABELS = {
     "tenure_months": "Customer tenure",
@@ -22,27 +21,33 @@ FEATURE_LABELS = {
     "has_tech_support": "Has tech support",
 }
 
-
 def _label(raw_name: str) -> str:
     return FEATURE_LABELS.get(raw_name, raw_name.replace("_", " ").title())
 
-
 def explain_prediction(pipeline, X_row: pd.DataFrame, top_k: int = 5) -> list[dict]:
-    """Return top-k SHAP factors with human-readable names and direction."""
+    """
+    Return top-k SHAP factors using XGBoost's built-in TreeSHAP.
+    This avoids the `shap` library and its torch dependency.
+    """
+    # Get the preprocessor and classifier from the pipeline
     prep = pipeline.named_steps["prep"]
     clf = pipeline.named_steps["clf"]
 
+    # Transform the input row
     X_transformed = prep.transform(X_row)
     feature_names = prep.get_feature_names_out()
 
-    explainer = shap.TreeExplainer(clf)
-    shap_values = explainer.shap_values(X_transformed)
+    # Use XGBoost's native SHAP implementation (pred_contribs=True)
+    dmat = xgb.DMatrix(X_transformed, feature_names=list(feature_names))
+    # The output is a matrix where the last column is the bias term
+    shap_values = clf.get_booster().predict(dmat, pred_contribs=True)
 
-    if isinstance(shap_values, list):
-        shap_values = shap_values[1]
+    # The row of interest is the first row; exclude the bias term
+    row_shap = shap_values[0][:-1]
 
-    row_shap = shap_values[0]
+    # Pair feature names with their SHAP values and original values
     pairs = list(zip(feature_names, row_shap, X_transformed[0]))
+    # Sort by the absolute SHAP value, highest first
     pairs.sort(key=lambda x: abs(x[1]), reverse=True)
 
     out = []
