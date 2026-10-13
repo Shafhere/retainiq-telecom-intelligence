@@ -7,6 +7,8 @@ End-to-end churn prediction platform with SHAP explainability and bilingual (Eng
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.40-red)
 ![XGBoost](https://img.shields.io/badge/XGBoost-2.1-orange)
 
+[Live Demo] : https://youtu.be/ez9_itrPDIs
+
 ## The Problem
 
 A telecom operator with 5 million subscribers loses ~2% per month to churn — roughly **SAR 300M per year** in lost lifetime value. Predicting *who* will churn is only half the answer. The other half is **what to offer them to stay**.
