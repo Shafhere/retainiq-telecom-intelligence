@@ -63,7 +63,17 @@ def train_models(df: pd.DataFrame, test_size: float = 0.2, seed: int = 42) -> di
     preprocessor = build_preprocessor()
 
     # Compute class imbalance ratio (negatives / positives)
-    neg, pos = (y_train == 0).sum(), (y_train == 1).sum()
+    neg, pos = int((y_train == 0).sum()), int((y_train == 1).sum())
+    if pos == 0:
+        raise ValueError(
+            f"No positive (churn=1) samples in training data. "
+            f"Total rows: {len(y_train)}, unique values: {y_train.unique().tolist()[:10]}. "
+            f"Check that your 'churn' column contains Yes/No, True/False, or 1/0."
+        )
+    if neg == 0:
+        raise ValueError(
+            f"No negative (churn=0) samples. unique values: {y_train.unique().tolist()[:10]}"
+        )
     scale = float(neg) / float(pos)
     print(f"Class balance — neg: {neg}, pos: {pos}, scale_pos_weight: {scale:.2f}")
 

@@ -1,4 +1,6 @@
 import io
+import re
+from difflib import SequenceMatcher
 import pandas as pd
 
 SUPPORTED_FORMATS = {".csv", ".xlsx", ".xls", ".json", ".parquet"}
@@ -11,18 +13,15 @@ FEATURE_ALIASES = {
     "total_charges": ["total_charges", "totalcharges", "total_spent", "total_paid", "lifetime_value", "ltv"],
     "contract_type": ["contract_type", "contract", "plan_type", "plan"],
     "internet_service": ["internet_service", "internetservice", "internet", "internet_type"],
-    "num_support_calls": ["num_support_calls", "support_calls", "num_complaints", "complaints", "support_tickets"],
+    "num_support_calls": ["num_support_calls", "support_calls", "num_complaints", "complaints", "support_tickets", "support_call_count", "recent_support_calls"],
     "payment_method": ["payment_method", "paymentmethod", "payment", "payment_type", "pay_method"],
     "has_online_security": ["has_online_security", "onlinesecurity", "online_security", "security_addon"],
     "has_tech_support": ["has_tech_support", "techsupport", "tech_support", "premium_support"],
-    "days_since_last_login": ["days_since_last_login", "last_login_days", "days_inactive", "inactivity_days", "days_since_login"],
-    "avg_monthly_gb": ["avg_monthly_gb", "avg_gb", "data_usage", "monthly_gb", "gb_used"],
-    "late_payments": ["late_payments", "num_late_payments", "payment_delays", "missed_payments", "payment_late_count"],
+    "days_since_last_login": ["days_since_last_login", "last_login_days", "days_inactive", "inactivity_days", "days_since_login", "days_since_login", "last_login"],
+    "avg_monthly_gb": ["avg_monthly_gb", "avg_gb", "data_usage", "monthly_gb", "gb_used", "average_gb", "avg_data_usage"],
+    "late_payments": ["late_payments", "num_late_payments", "payment_delays", "missed_payments", "payment_late_count", "late_payment_count"],
     "churn": ["churn", "churned", "target", "label", "is_churn", "churn_flag", "exited"],
 }
-
-# Columns the trainer absolutely needs
-REQUIRED_TARGET = "churn"
 
 # Columns the model expects (from trainer.NUMERIC + CATEGORICAL + BOOLEAN)
 MODEL_NUMERIC = [
@@ -32,10 +31,17 @@ MODEL_NUMERIC = [
 ]
 MODEL_CATEGORICAL = ["contract_type", "internet_service", "payment_method"]
 MODEL_BOOLEAN = ["has_online_security", "has_tech_support"]
+REQUIRED_TARGET = "churn"
 
 
 def _normalize(name: str) -> str:
-    return name.strip().lower().replace(" ", "_").replace("-", "_")
+    """Lowercase, split CamelCase, replace spaces/dashes with underscores."""
+    # Split CamelCase: SupportCalls -> Support_Calls, avgGB -> avg_GB
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+    s = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", s)   # XMLParser -> XML_Parser
+    s = s.strip().lower().replace(" ", "_").replace("-", "_")
+    s = re.sub(r"_+", "_", s)                            # collapse __
+    return s
 
 
 def load_any_format(filename: str, content: bytes) -> pd.DataFrame:
@@ -63,25 +69,46 @@ def load_any_format(filename: str, content: bytes) -> pd.DataFrame:
 
 
 def map_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Rename incoming columns to canonical names using aliases."""
+    """Rename incoming columns to canonical names using aliases + fuzzy fallback."""
     df = df.copy()
     df.columns = [_normalize(c) for c in df.columns]
 
     rename_map = {}
-    unmatched = []
+    used_canonical = set()
 
+    # -------- Pass 1: exact alias match --------
     for canonical, aliases in FEATURE_ALIASES.items():
         if canonical in df.columns:
-            continue  # already named correctly
+            used_canonical.add(canonical)
+            continue
         for alias in aliases:
             alias_norm = _normalize(alias)
             if alias_norm in df.columns:
                 rename_map[alias_norm] = canonical
+                used_canonical.add(canonical)
                 break
+
+    # -------- Pass 2: fuzzy match remaining columns --------
+    remaining_cols = [c for c in df.columns if c not in rename_map and c not in used_canonical]
+    for canonical, aliases in FEATURE_ALIASES.items():
+        if canonical in used_canonical:
+            continue
+        best_score = 0.0
+        best_col = None
+        for col in remaining_cols:
+            for alias in aliases:
+                alias_norm = _normalize(alias)
+                score = SequenceMatcher(None, col, alias_norm).ratio()
+                if score > best_score:
+                    best_score = score
+                    best_col = col
+        if best_score >= 0.82 and best_col:
+            rename_map[best_col] = canonical
+            used_canonical.add(canonical)
+            remaining_cols.remove(best_col)
 
     df = df.rename(columns=rename_map)
     return df, rename_map
-
 
 def validate_schema(df: pd.DataFrame) -> tuple[bool, list[str], list[str]]:
     """Check if the dataframe has everything the trainer needs."""
@@ -92,7 +119,7 @@ def validate_schema(df: pd.DataFrame) -> tuple[bool, list[str], list[str]]:
 
 
 def coerce_types(df: pd.DataFrame) -> pd.DataFrame:
-    """Coerce numeric and boolean columns; fill safe defaults for optional ones."""
+    """Coerce numeric, boolean, and target columns; handle many value formats."""
     df = df.copy()
 
     # Numeric
@@ -101,7 +128,7 @@ def coerce_types(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = 0
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # Boolean — handle yes/no, true/false, 1/0, True/False
+    # Boolean
     def to_bool(v):
         if isinstance(v, bool):
             return v
@@ -115,20 +142,47 @@ def coerce_types(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = False
         df[col] = df[col].map(to_bool)
 
-    # Categorical — force to string
+    # Categorical
     for col in MODEL_CATEGORICAL:
         if col not in df.columns:
             df[col] = "unknown"
         df[col] = df[col].astype(str).str.strip()
 
-    # Target — convert Yes/No or True/False to 1/0
+    # ----- Target (churn) — ROBUST conversion -----
     target = df[REQUIRED_TARGET]
-    if target.dtype == object:
-        target = target.astype(str).str.strip().str.lower().map(
-            {"yes": 1, "no": 0, "true": 1, "false": 0, "1": 1, "0": 0, "churn": 1}
-        )
-    df[REQUIRED_TARGET] = pd.to_numeric(target, errors="coerce").fillna(0).astype(int)
+    print(f"[ingest] target dtype={target.dtype}, sample={target.head(5).tolist()}")
 
+    # If already numeric, just coerce
+    if pd.api.types.is_numeric_dtype(target):
+        df[REQUIRED_TARGET] = pd.to_numeric(target, errors="coerce").fillna(0).astype(int)
+        print(f"[ingest] numeric target — rate={df[REQUIRED_TARGET].mean():.3f}")
+        return df
+
+    # Otherwise treat as string and map
+    target_str = target.astype(str).str.strip().str.lower()
+
+    mapping = {
+        "yes": 1, "no": 0,
+        "true": 1, "false": 0,
+        "1": 1, "0": 0, "1.0": 1, "0.0": 0,
+        "churn": 1, "churned": 1, "exited": 1, "left": 1,
+        "active": 0, "retained": 0, "stayed": 0, "no_churn": 0,
+        "y": 1, "n": 0, "t": 1, "f": 0,
+        "yes ": 1, " no": 0,  # double safety
+    }
+
+    mapped = target_str.map(mapping)
+    unmapped = mapped.isna().sum()
+    if unmapped > 0:
+        print(f"[ingest] WARNING: {unmapped} unmapped target values. Sample: {target_str[mapped.isna()].head(5).tolist()}")
+
+    # If mapping failed entirely, try numeric conversion
+    if mapped.isna().all():
+        print("[ingest] Mapping failed — trying numeric conversion")
+        mapped = pd.to_numeric(target_str, errors="coerce")
+
+    df[REQUIRED_TARGET] = mapped.fillna(0).astype(int)
+    print(f"[ingest] final churn rate={df[REQUIRED_TARGET].mean():.3f}, positives={int(df[REQUIRED_TARGET].sum())}")
     return df
 
 

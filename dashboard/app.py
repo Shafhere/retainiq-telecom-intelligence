@@ -135,18 +135,19 @@ st.markdown(f"""
         position: relative;
         background:
             linear-gradient(120deg,
-                {accent_dark} 0%,
-                {accent} 25%,
-                {gold} 50%,
-                {accent} 75%,
-                {accent_dark} 100%);
+                #faf0dc 0%,
+                #f0dcb4 25%,
+                #e6c78a 50%,
+                #f0dcb4 75%,
+                #faf0dc 100%);
         background-size: 300% 300%;
         animation: heroShimmer 16s ease-in-out infinite;
-        color: #ffffff;
+        color: #1a2b30;
         padding: 2.6rem 2.6rem 2.2rem 2.6rem;
         border-radius: 24px;
-        box-shadow: 0 20px 50px rgba(8,61,51,0.34),
-                    inset 0 1px 0 rgba(255,255,255,0.20);
+        box-shadow: 0 20px 50px rgba(8,61,51,0.20),
+                    inset 0 1px 0 rgba(255,255,255,0.7);
+        border: 1px solid {gold};
         margin-bottom: 1.5rem;
         overflow: hidden;
     }}
@@ -155,13 +156,13 @@ st.markdown(f"""
         position: absolute;
         top: -60px; right: -60px;
         width: 260px; height: 260px;
-        border: 2px dashed rgba(255,255,255,0.15);
+        border: 2px dashed rgba(184,134,90,0.35);
         border-radius: 50%;
         animation: ringRotate 40s linear infinite;
         pointer-events: none;
     }}
     .hero h1 {{
-        color: #ffffff;
+        color: {accent_dark};
         margin: 0;
         font-size: 2.15rem;
         font-weight: 700;
@@ -172,7 +173,7 @@ st.markdown(f"""
         position: relative; z-index: 2;
     }}
     .hero p {{
-        color: #f7efe0;
+        color: #3a4a50;
         margin: 0.7rem 0 0 0;
         font-size: 1.05rem;
         max-width: 780px;
@@ -180,21 +181,23 @@ st.markdown(f"""
     }}
     .hero .flag-img {{
         border-radius: 6px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+        box-shadow: 0 4px 14px rgba(184,134,90,0.45);
         background: #fff;
         flex-shrink: 0;
+        border: 1px solid rgba(184,134,90,0.4);
     }}
     .badge {{
         display: inline-block;
-        background: rgba(255,255,255,0.16);
-        color: #fff5df;
+        background: rgba(13,92,77,0.10);
+        color: {accent_dark};
         padding: 0.35rem 0.95rem;
         border-radius: 999px;
         font-size: 0.78rem;
+        font-weight: 600;
         letter-spacing: 0.3px;
         margin-right: 0.5rem;
         margin-top: 1.1rem;
-        border: 1px solid rgba(212,163,115,0.55);
+        border: 1px solid rgba(184,134,90,0.65);
         backdrop-filter: blur(4px);
         position: relative; z-index: 2;
     }}
@@ -490,12 +493,14 @@ with tabs[3]:
         else:
             st.error(r.text)
 
-    st.markdown("")
-    st.markdown('<div class="section-title">Version History</div>', unsafe_allow_html=True)
-    if st.button("🔄 Refresh Versions"):
-        r = requests.get(f"{API}/datasets/versions", timeout=15)
-        if r.ok:
-            v = r.json()
+        st.markdown("---")
+    st.markdown("### Version History")
+
+    # Auto-load on every render
+    try:
+        _auto = requests.get(f"{API}/datasets/versions", timeout=15)
+        if _auto.ok:
+            v = _auto.json()
             st.markdown("**Data versions**")
             if v["data_versions"]:
                 st.dataframe(pd.DataFrame(v["data_versions"]), use_container_width=True)
@@ -506,3 +511,10 @@ with tabs[3]:
                 st.dataframe(pd.DataFrame(v["model_versions"]), use_container_width=True)
             else:
                 st.info("No model versions yet.")
+        else:
+            st.caption("Version history unavailable.")
+    except Exception:
+        st.caption("Version history unavailable.")
+
+    if st.button("🔄 Refresh Versions"):
+        st.rerun()
