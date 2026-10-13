@@ -7,7 +7,7 @@ End-to-end churn prediction platform with SHAP explainability and bilingual (Eng
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.40-red)
 ![XGBoost](https://img.shields.io/badge/XGBoost-2.1-orange)
 
-[Live Demo] : https://youtu.be/ez9_itrPDIs
+[Live Demo] : https://youtu.be/3UnOtNmFVHQ
 
 ## The Problem
 
