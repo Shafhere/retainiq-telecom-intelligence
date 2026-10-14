@@ -198,7 +198,7 @@ See [`sagemaker/README.md`](sagemaker/README.md) for the production training wor
 
 ## Demo
 
-[Add your YouTube demo link here]
+[https://youtu.be/3UnOtNmFVHQ]
 
 ## License
 
